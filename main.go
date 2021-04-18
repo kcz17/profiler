@@ -77,7 +77,9 @@ func main() {
 
 	_, err = queue.AddConsumerFunc(RedisQueueTag, func(delivery rmq.Delivery) {
 		sessionID := delivery.Payload()
+		log.Printf("incoming request for session ID %s", sessionID)
 		priority := profiler.Profile(sessionID)
+		log.Printf("assigned priority %s to session ID %s", priority.String(), sessionID)
 		if err := priorityStore.Set(sessionID, priority); err != nil {
 			log.Printf("unexpected error when setting priority %s for session ID %s; err = %s", priority.String(), sessionID, err)
 			if err := delivery.Reject(); err != nil {
