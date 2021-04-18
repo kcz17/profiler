@@ -6,13 +6,6 @@ import (
 	"github.com/kcz17/profiler/priority"
 )
 
-// Profiler only has one action: to process user history in the implementation's
-// data store, returning priorities for sessions which will ultimately be set as
-// cookies on the front-end.
-type Profiler interface {
-	Process() map[string]priority.Priority
-}
-
 type InfluxDBProfiler struct {
 	client influxdb2.Client
 	query  api.QueryAPI
@@ -31,6 +24,7 @@ func NewInfluxDBProfiler(addr, authToken, org, bucket string) *InfluxDBProfiler 
 	}
 }
 
-func (p *InfluxDBProfiler) Process() map[string]priority.Priority {
-	panic("To be implemented")
+func (p *InfluxDBProfiler) Profile(sessionID string) priority.Priority {
+	// TODO(kz): Remove hardcoding once tested.
+	return priority.Low
 }
