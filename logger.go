@@ -37,7 +37,7 @@ func NewInfluxDBLogger(baseURL, authToken, org, bucket string) *influxDBLogger {
 }
 
 func (l *influxDBLogger) LogProfile(sessionID string, priority priority.Priority) {
-	p := influxdb2.NewPointWithMeasurement("dimmer_response_time").
+	p := influxdb2.NewPointWithMeasurement("session_priority").
 		AddTag("session_id", sessionID).
 		AddField("priority", priority.String()).
 		SetTime(time.Now())
