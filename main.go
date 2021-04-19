@@ -5,6 +5,7 @@ import (
 	"github.com/adjust/rmq/v3"
 	"github.com/go-redis/redis/v7"
 	"github.com/ilyakaznacheev/cleanenv"
+	"github.com/kcz17/profiler/priority"
 	"github.com/kcz17/profiler/prioritystore"
 	"log"
 	"time"
@@ -52,7 +53,13 @@ func main() {
 	}
 
 	priorityStore := prioritystore.NewRedisStore(config.RedisAddr, config.RedisPassword, config.RedisStoreDB)
-	profiler := NewInfluxDBProfiler(config.InfluxDBAddr, config.InfluxDBToken, config.InfluxDBOrg, config.InfluxDBBucket)
+	profiler := NewInfluxDBProfiler(
+		hardcodedRules(),
+		config.InfluxDBAddr,
+		config.InfluxDBToken,
+		config.InfluxDBOrg,
+		config.InfluxDBBucket,
+	)
 
 	// Set up a Redis queue to process incoming session IDs.
 	errChan := make(chan error, 10)
@@ -78,10 +85,16 @@ func main() {
 	_, err = queue.AddConsumerFunc(RedisQueueTag, func(delivery rmq.Delivery) {
 		sessionID := delivery.Payload()
 		log.Printf("incoming request for session ID %s", sessionID)
-		priority := profiler.Profile(sessionID)
-		log.Printf("assigned priority %s to session ID %s", priority.String(), sessionID)
-		if err := priorityStore.Set(sessionID, priority); err != nil {
-			log.Printf("unexpected error when setting priority %s for session ID %s; err = %s", priority.String(), sessionID, err)
+
+		profiledPriority, err := profiler.Profile(sessionID)
+		if err != nil {
+			log.Printf("unexpected error when profiling session ID %s; err = %s", sessionID, err)
+			return
+		}
+
+		log.Printf("assigned priority %s to session ID %s", profiledPriority.String(), sessionID)
+		if err := priorityStore.Set(sessionID, profiledPriority); err != nil {
+			log.Printf("unexpected error when setting priority %s for session ID %s; err = %s", profiledPriority.String(), sessionID, err)
 			if err := delivery.Reject(); err != nil {
 				log.Printf("unable to reject delivery; err = %s", err)
 			}
@@ -89,7 +102,7 @@ func main() {
 		}
 
 		if err := delivery.Ack(); err != nil {
-			log.Printf("unable to ack delivery; err = %s", err)
+			log.Printf("unable to ack delivery for session ID %s; err = %s", sessionID, err)
 		}
 	})
 	if err != nil {
@@ -122,5 +135,38 @@ func logErrors(errChan <-chan error) {
 		default:
 			log.Print("other error: ", err)
 		}
+	}
+}
+
+func hardcodedRules() OrderedRules {
+	return OrderedRules{
+		Rule{
+			Description: "User has checked out items in past",
+			Method: MatchableMethod{
+				ShouldMatchAll: false,
+				Method:         "POST",
+			},
+			Path:        "/cart",
+			Occurrences: 1,
+			Result:      priority.High,
+		},
+		Rule{
+			Description: "User is browsing and unlikely to buy",
+			Method: MatchableMethod{
+				ShouldMatchAll: true,
+			},
+			Path:        "/category.html",
+			Occurrences: 5,
+			Result:      priority.Low,
+		},
+		Rule{
+			Description: "User is browsing for delivery updates",
+			Method: MatchableMethod{
+				ShouldMatchAll: true,
+			},
+			Path:        "/news",
+			Occurrences: 1,
+			Result:      priority.Low,
+		},
 	}
 }
