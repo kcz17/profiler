@@ -33,10 +33,15 @@ type Config struct {
 	// Store for session browsing history. Currently, only InfluxDB is available.
 	///////////////////////////////////////////////////////////////////////////
 
-	InfluxDBAddr   string `env:"INFLUXDB_ADDR"`
-	InfluxDBToken  string `env:"INFLUXDB_TOKEN"`
-	InfluxDBOrg    string `env:"INFLUXDB_ORG"`
-	InfluxDBBucket string `env:"INFLUXDB_BUCKET"`
+	InfluxDBAddr          string `env:"INFLUXDB_ADDR"`
+	InfluxDBToken         string `env:"INFLUXDB_TOKEN"`
+	InfluxDBOrg           string `env:"INFLUXDB_ORG"`
+	InfluxDBSessionBucket string `env:"INFLUXDB_SESSION_BUCKET"`
+
+	////////////////////////////////////////////////////////////////////////////
+	// Store for logging output. Currently shared with InfluxDB above.
+	////////////////////////////////////////////////////////////////////////////
+	InfluxDBLoggingBucket string `env:"INFLUXDB_LOGGING_BUCKET"`
 }
 
 const prefetchLimit = 5
@@ -52,13 +57,14 @@ func main() {
 		log.Fatalf("expected err == nil in envconfig.Process(); got err = %v", err)
 	}
 
+	logger := NewInfluxDBLogger(config.InfluxDBAddr, config.InfluxDBToken, config.InfluxDBOrg, config.InfluxDBLoggingBucket)
 	priorityStore := prioritystore.NewRedisStore(config.RedisAddr, config.RedisPassword, config.RedisStoreDB)
 	profiler := NewInfluxDBProfiler(
 		hardcodedRules(),
 		config.InfluxDBAddr,
 		config.InfluxDBToken,
 		config.InfluxDBOrg,
-		config.InfluxDBBucket,
+		config.InfluxDBSessionBucket,
 	)
 
 	// Set up a Redis queue to process incoming session IDs.
@@ -92,6 +98,7 @@ func main() {
 			return
 		}
 
+		logger.LogProfile(sessionID, profiledPriority)
 		log.Printf("assigned priority %s to session ID %s", profiledPriority.String(), sessionID)
 		if err := priorityStore.Set(sessionID, profiledPriority); err != nil {
 			log.Printf("unexpected error when setting priority %s for session ID %s; err = %s", profiledPriority.String(), sessionID, err)
