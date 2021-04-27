@@ -9,4 +9,5 @@ require (
 	github.com/ilyakaznacheev/cleanenv v1.2.5
 	github.com/influxdata/influxdb-client-go/v2 v2.2.3
 	github.com/kcz17/dimmer v0.0.0-20210418212558-5dd5d69984a0 // indirect
+	github.com/spf13/viper v1.7.1
 )

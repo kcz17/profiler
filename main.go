@@ -4,45 +4,12 @@ import (
 	"fmt"
 	"github.com/adjust/rmq/v3"
 	"github.com/go-redis/redis/v7"
-	"github.com/ilyakaznacheev/cleanenv"
+	"github.com/kcz17/profiler/config"
 	"github.com/kcz17/profiler/priority"
 	"github.com/kcz17/profiler/prioritystore"
 	"log"
 	"time"
 )
-
-type Config struct {
-	// ProfilingInterval is how frequently sessions are profiled in seconds.
-	ProfilingInterval int `env:"PROFILING_INTERVAL" env-default:"10"`
-
-	///////////////////////////////////////////////////////////////////////////
-	// Key-value store of session cookies. Currently, only Redis is available.
-	///////////////////////////////////////////////////////////////////////////
-
-	RedisAddr     string `env:"REDIS_ADDR"`
-	RedisPassword string `env:"REDIS_PASSWORD"`
-	RedisStoreDB  int    `env:"REDIS_STORE_DB"`
-
-	///////////////////////////////////////////////////////////////////////////
-	// Store for session ID queue. Currently shared with Redis above.
-	///////////////////////////////////////////////////////////////////////////
-
-	RedisQueueDB int `env:"REDIS_QUEUE_DB"`
-
-	///////////////////////////////////////////////////////////////////////////
-	// Store for session browsing history. Currently, only InfluxDB is available.
-	///////////////////////////////////////////////////////////////////////////
-
-	InfluxDBAddr          string `env:"INFLUXDB_ADDR"`
-	InfluxDBToken         string `env:"INFLUXDB_TOKEN"`
-	InfluxDBOrg           string `env:"INFLUXDB_ORG"`
-	InfluxDBSessionBucket string `env:"INFLUXDB_SESSION_BUCKET"`
-
-	////////////////////////////////////////////////////////////////////////////
-	// Store for logging output. Currently shared with InfluxDB above.
-	////////////////////////////////////////////////////////////////////////////
-	InfluxDBLoggingBucket string `env:"INFLUXDB_LOGGING_BUCKET"`
-}
 
 const prefetchLimit = 5
 const pollDuration = 100 * time.Millisecond
@@ -51,29 +18,36 @@ const RedisQueueTag = "profiler service"
 const RedisQueueName = "sessions"
 
 func main() {
-	var config Config
-	err := cleanenv.ReadEnv(&config)
-	if err != nil {
-		log.Fatalf("expected err == nil in envconfig.Process(); got err = %v", err)
-	}
+	conf := config.ReadConfig()
 
-	logger := NewInfluxDBLogger(config.InfluxDBAddr, config.InfluxDBToken, config.InfluxDBOrg, config.InfluxDBLoggingBucket)
-	priorityStore := prioritystore.NewRedisStore(config.RedisAddr, config.RedisPassword, config.RedisStoreDB)
+	orderedRules := configRulesToOrderedRules(conf.Rules)
+
+	logger := NewInfluxDBLogger(
+		conf.Connections.InfluxDB.Addr,
+		conf.Connections.InfluxDB.Token,
+		conf.Connections.InfluxDB.Org,
+		conf.Connections.InfluxDB.LoggingBucket,
+	)
+	priorityStore := prioritystore.NewRedisStore(
+		conf.Connections.Redis.Addr,
+		conf.Connections.Redis.Addr,
+		conf.Connections.Redis.StoreDB,
+	)
 	profiler := NewInfluxDBProfiler(
-		hardcodedRules(),
-		config.InfluxDBAddr,
-		config.InfluxDBToken,
-		config.InfluxDBOrg,
-		config.InfluxDBSessionBucket,
+		orderedRules,
+		conf.Connections.InfluxDB.Addr,
+		conf.Connections.InfluxDB.Token,
+		conf.Connections.InfluxDB.Org,
+		conf.Connections.InfluxDB.SessionBucket,
 	)
 
 	// Set up a Redis queue to process incoming session IDs.
 	errChan := make(chan error, 10)
 	go logErrors(errChan)
 	connection, err := rmq.OpenConnectionWithRedisClient(RedisQueueTag, redis.NewClient(&redis.Options{
-		Addr:     config.RedisAddr,
-		Password: config.RedisPassword,
-		DB:       config.RedisQueueDB,
+		Addr:     conf.Connections.Redis.Addr,
+		Password: conf.Connections.Redis.Password,
+		DB:       conf.Connections.Redis.QueueDB,
 	}), errChan)
 	if err != nil {
 		panic(fmt.Errorf("unable to open connection with redis client: %w", err))
@@ -116,6 +90,8 @@ func main() {
 		panic(fmt.Errorf("unable to add consumer func: %w", err))
 	}
 
+	log.Printf("Profiler started with following rules:\n%s", orderedRules.String())
+
 	cleaner := rmq.NewCleaner(connection)
 	for range time.Tick(time.Second) {
 		_, err := cleaner.Clean()
@@ -145,35 +121,28 @@ func logErrors(errChan <-chan error) {
 	}
 }
 
-func hardcodedRules() OrderedRules {
-	return OrderedRules{
-		Rule{
-			Description: "User has checked out items in past",
+func configRulesToOrderedRules(configRules []config.Rule) OrderedRules {
+	var rules OrderedRules
+
+	for _, configRule := range configRules {
+		rule := Rule{
+			Description: configRule.Description,
 			Method: MatchableMethod{
-				ShouldMatchAll: false,
-				Method:         "POST",
+				configRule.Method.ShouldMatchAll,
+				configRule.Method.Method,
 			},
-			Path:        "/cart",
-			Occurrences: 1,
-			Result:      priority.High,
-		},
-		Rule{
-			Description: "User is browsing and unlikely to buy",
-			Method: MatchableMethod{
-				ShouldMatchAll: true,
-			},
-			Path:        "/category.html",
-			Occurrences: 5,
-			Result:      priority.Low,
-		},
-		Rule{
-			Description: "User is browsing for delivery updates",
-			Method: MatchableMethod{
-				ShouldMatchAll: true,
-			},
-			Path:        "/news",
-			Occurrences: 1,
-			Result:      priority.Low,
-		},
+			Path:        configRule.Path,
+			Occurrences: configRule.Occurrences,
+		}
+
+		if configRule.Result == "high" {
+			rule.Result = priority.High
+		} else {
+			rule.Result = priority.Low
+		}
+
+		rules = append(rules, rule)
 	}
+
+	return rules
 }

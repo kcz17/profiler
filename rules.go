@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/kcz17/profiler/priority"
 	"strings"
 )
@@ -30,3 +31,21 @@ func (r Rule) IsMatch(method, path string) bool {
 
 // OrderedRules is a slice of rules ordered by highest priority rule descending.
 type OrderedRules []Rule
+
+func (rules OrderedRules) String() string {
+	var sb strings.Builder
+
+	for i, rule := range rules {
+		sb.WriteString(fmt.Sprintf("[%d] %s\n", i, rule.Description))
+		if rule.Method.ShouldMatchAll {
+			sb.WriteString("\tMethod: * \n")
+		} else {
+			sb.WriteString(fmt.Sprintf("\tMethod: %s \n", rule.Method.Method))
+		}
+		sb.WriteString(fmt.Sprintf("\tPath: %s \n", rule.Path))
+		sb.WriteString(fmt.Sprintf("\tOccurrences needed: %d \n", rule.Occurrences))
+		sb.WriteString(fmt.Sprintf("\tResulting priority: %s \n", rule.Result.String()))
+	}
+
+	return sb.String()
+}
