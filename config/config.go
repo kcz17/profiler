@@ -66,12 +66,13 @@ func ReadConfig() *Config {
 	viper.AutomaticEnv()
 	viper.SetConfigType("yaml")
 	viper.SetConfigName("config")
-	viper.AddConfigPath("/etc/config")
+	viper.AddConfigPath(".")
+	viper.AddConfigPath("/app")
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Fatalf("error: /etc/config/config.yaml not found. Are you sure you have configured the ConfigMap?\nerr = %s", err)
+			log.Fatalf("error: /app/config.yaml not found. Are you sure you have configured the ConfigMap?\nerr = %s", err)
 		} else {
-			log.Fatalf("error when reading config file at /etc/config/config.yaml: err = %s", err)
+			log.Fatalf("error when reading config file at /app/config.yaml: err = %s", err)
 		}
 	}
 
