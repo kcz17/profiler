@@ -64,7 +64,8 @@ func ReadConfig() *Config {
 	viper.SetDefault("rules", []Rule{})
 
 	viper.AutomaticEnv()
-	viper.SetConfigName("config.yaml")
+	viper.SetConfigType("yaml")
+	viper.SetConfigName("config")
 	viper.AddConfigPath("/etc/config")
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
