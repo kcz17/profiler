@@ -53,7 +53,7 @@ type Rule struct {
 }
 
 type MatchableMethod struct {
-	ShouldMatchAll bool `mapstructure:"sholdMatchAll" validate:"required_without=Method"`
+	ShouldMatchAll bool `mapstructure:"shouldMatchAll" validate:"required_without=Method"`
 	// Method must be set if ShouldMatchAll is false. If ShouldMatchAll is true,
 	// Method is ignored.
 	Method string `mapstructure:"method" validate:"required_without=ShouldMatchAll"`
