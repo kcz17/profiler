@@ -23,31 +23,31 @@ func main() {
 	orderedRules := configRulesToOrderedRules(conf.Rules)
 
 	logger := NewInfluxDBLogger(
-		conf.Connections.InfluxDB.Addr,
-		conf.Connections.InfluxDB.Token,
-		conf.Connections.InfluxDB.Org,
-		conf.Connections.InfluxDB.LoggingBucket,
+		*conf.Connections.InfluxDB.Addr,
+		*conf.Connections.InfluxDB.Token,
+		*conf.Connections.InfluxDB.Org,
+		*conf.Connections.InfluxDB.LoggingBucket,
 	)
 	priorityStore := prioritystore.NewRedisStore(
-		conf.Connections.Redis.Addr,
-		conf.Connections.Redis.Addr,
-		conf.Connections.Redis.StoreDB,
+		*conf.Connections.Redis.Addr,
+		*conf.Connections.Redis.Addr,
+		*conf.Connections.Redis.StoreDB,
 	)
 	profiler := NewInfluxDBProfiler(
 		orderedRules,
-		conf.Connections.InfluxDB.Addr,
-		conf.Connections.InfluxDB.Token,
-		conf.Connections.InfluxDB.Org,
-		conf.Connections.InfluxDB.SessionBucket,
+		*conf.Connections.InfluxDB.Addr,
+		*conf.Connections.InfluxDB.Token,
+		*conf.Connections.InfluxDB.Org,
+		*conf.Connections.InfluxDB.SessionBucket,
 	)
 
 	// Set up a Redis queue to process incoming session IDs.
 	errChan := make(chan error, 10)
 	go logErrors(errChan)
 	connection, err := rmq.OpenConnectionWithRedisClient(RedisQueueTag, redis.NewClient(&redis.Options{
-		Addr:     conf.Connections.Redis.Addr,
-		Password: conf.Connections.Redis.Password,
-		DB:       conf.Connections.Redis.QueueDB,
+		Addr:     *conf.Connections.Redis.Addr,
+		Password: *conf.Connections.Redis.Password,
+		DB:       *conf.Connections.Redis.QueueDB,
 	}), errChan)
 	if err != nil {
 		panic(fmt.Errorf("unable to open connection with redis client: %w", err))
@@ -126,16 +126,19 @@ func configRulesToOrderedRules(configRules []config.Rule) OrderedRules {
 
 	for _, configRule := range configRules {
 		rule := Rule{
-			Description: configRule.Description,
-			Method: MatchableMethod{
-				configRule.Method.ShouldMatchAll,
-				configRule.Method.Method,
-			},
-			Path:        configRule.Path,
-			Occurrences: configRule.Occurrences,
+			Description: *configRule.Description,
+			Path:        *configRule.Path,
+			Occurrences: *configRule.Occurrences,
 		}
 
-		if configRule.Result == "high" {
+		if configRule.Method.ShouldMatchAll != nil && *configRule.Method.ShouldMatchAll {
+			rule.Method.ShouldMatchAll = true
+		} else {
+			rule.Method.ShouldMatchAll = false
+			rule.Method.Method = *configRule.Method.Method
+		}
+
+		if *configRule.Result == "high" {
 			rule.Result = priority.High
 		} else {
 			rule.Result = priority.Low

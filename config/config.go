@@ -5,6 +5,9 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
 	"log"
+	"os"
+	"reflect"
+	"strings"
 )
 
 type Config struct {
@@ -15,7 +18,7 @@ type Config struct {
 
 type Profiling struct {
 	// ProfilingInterval is how frequently sessions are profiled in seconds.
-	ProfilingInterval int `mapstructure:"interval" validate:"required"`
+	ProfilingInterval *int `mapstructure:"interval" validate:"required"`
 }
 
 type Connections struct {
@@ -26,39 +29,39 @@ type Connections struct {
 // Redis represents the key-value store of session cookies. Currently, only the
 // Redis driver is available.
 type Redis struct {
-	Addr     string `mapstructure:"addr" validate:"required"`
-	Password string `mapstructure:"pass" validate:"required"`
-	StoreDB  int    `mapstructure:"storeDB" validate:"required"`
-	// RedisQueueDBis the store for the session ID queue. Currently shared with
+	Addr     *string `mapstructure:"addr" validate:"required"`
+	Password *string `mapstructure:"pass" validate:"required"`
+	StoreDB  *int    `mapstructure:"storeDB" validate:"required"`
+	// QueueDB is the store for the session ID queue. Currently shared with
 	// Redis above.
-	QueueDB int `mapstructure:"queueDB" validate:"required"`
+	QueueDB *int `mapstructure:"queueDB" validate:"required"`
 }
 
 // InfluxDB represents the store for the session browsing history. Currently,
 // only InfluxDB is available.
 type InfluxDB struct {
-	Addr          string `mapstructure:"addr"  validate:"required"`
-	Token         string `mapstructure:"token"  validate:"required"`
-	Org           string `mapstructure:"org"  validate:"required"`
-	SessionBucket string `mapstructure:"sessionBucket"  validate:"required"`
-	// InfluxDBLoggingBucket is the store for logging output. Currently shared
+	Addr          *string `mapstructure:"addr"  validate:"required"`
+	Token         *string `mapstructure:"token"  validate:"required"`
+	Org           *string `mapstructure:"org"  validate:"required"`
+	SessionBucket *string `mapstructure:"sessionBucket"  validate:"required"`
+	// LoggingBucket is the store for logging output. Currently shared
 	// with InfluxDB above.
-	LoggingBucket string `mapstructure:"loggingBucket"  validate:"required"`
+	LoggingBucket *string `mapstructure:"loggingBucket"  validate:"required"`
 }
 
 type Rule struct {
-	Description string `mapstructure:"description" validate:"required"`
+	Description *string `mapstructure:"description" validate:"required"`
 	Method      MatchableMethod
-	Path        string `mapstructure:"path" validate:"required"`
-	Occurrences int    `mapstructure:"occurrences" validate:"required"`
-	Result      string `mapstructure:"result" validate:"oneof=low high"`
+	Path        *string `mapstructure:"path" validate:"required"`
+	Occurrences *int    `mapstructure:"occurrences" validate:"required"`
+	Result      *string `mapstructure:"result" validate:"oneof=low high"`
 }
 
 type MatchableMethod struct {
-	ShouldMatchAll bool `mapstructure:"shouldMatchAll" validate:"required_without=Method"`
+	ShouldMatchAll *bool `mapstructure:"shouldMatchAll" validate:"required_without=Method"`
 	// Method must be set if ShouldMatchAll is false. If ShouldMatchAll is true,
 	// Method is ignored.
-	Method string `mapstructure:"method" validate:"required_without=ShouldMatchAll"`
+	Method *string `mapstructure:"method" validate:"required_without=ShouldMatchAll"`
 }
 
 func setDefaults() {
@@ -66,6 +69,8 @@ func setDefaults() {
 }
 
 func ReadConfig() *Config {
+	// Dots are not valid identifiers for environment variables.
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 	setDefaults()
 
@@ -81,6 +86,7 @@ func ReadConfig() *Config {
 	}
 
 	var config Config
+	bindEnvs(config)
 	if err := viper.Unmarshal(&config); err != nil {
 		log.Fatalf("error occurred while reading configuration file: err = %s", err)
 	}
@@ -99,7 +105,29 @@ func ReadConfig() *Config {
 		}
 
 		fmt.Println("Check your configuration file and try again.")
+		os.Exit(1)
 	}
 
 	return &config
+}
+
+// bindEnvs binds all environment variables automatically.
+// See: https://github.com/spf13/viper/issues/188#issuecomment-399884438
+func bindEnvs(iface interface{}, parts ...string) {
+	ifv := reflect.ValueOf(iface)
+	ift := reflect.TypeOf(iface)
+	for i := 0; i < ift.NumField(); i++ {
+		v := ifv.Field(i)
+		t := ift.Field(i)
+		tv, ok := t.Tag.Lookup("mapstructure")
+		if !ok {
+			continue
+		}
+		switch v.Kind() {
+		case reflect.Struct:
+			bindEnvs(v.Interface(), append(parts, tv)...)
+		default:
+			_ = viper.BindEnv(strings.Join(append(parts, tv), "."))
+		}
+	}
 }
