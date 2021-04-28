@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
 	"log"
 )
@@ -17,8 +19,8 @@ type Profiling struct {
 }
 
 type Connections struct {
-	Redis    Redis    `mapstructure:"redis"`
-	InfluxDB InfluxDB `mapstructure:"influxdb"`
+	Redis    Redis    `mapstructure:"redis" validate:"required"`
+	InfluxDB InfluxDB `mapstructure:"influxdb" validate:"required"`
 }
 
 // Redis represents the key-value store of session cookies. Currently, only the
@@ -59,15 +61,17 @@ type MatchableMethod struct {
 	Method string `mapstructure:"method" validate:"required_without=ShouldMatchAll"`
 }
 
-func ReadConfig() *Config {
+func setDefaults() {
 	viper.SetDefault("profiling.interval", 10)
-	viper.SetDefault("rules", []Rule{})
+}
 
+func ReadConfig() *Config {
 	viper.AutomaticEnv()
+	setDefaults()
+
 	viper.SetConfigType("yaml")
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")
-	viper.AddConfigPath("/app")
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			log.Fatalf("error: /app/config.yaml not found. Are you sure you have configured the ConfigMap?\nerr = %s", err)
@@ -78,7 +82,23 @@ func ReadConfig() *Config {
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
-		log.Fatalf("error occured while reading configuration file: err = %s", err)
+		log.Fatalf("error occurred while reading configuration file: err = %s", err)
+	}
+
+	validate := validator.New()
+	err := validate.Struct(&config)
+	if err != nil {
+		if _, ok := err.(*validator.InvalidValidationError); ok {
+			log.Printf("unable to validate config: err = %s", err)
+		}
+
+		log.Printf("encountered validation errors:\n")
+
+		for _, err := range err.(validator.ValidationErrors) {
+			fmt.Printf("\t%s\n", err.Error())
+		}
+
+		fmt.Println("Check your configuration file and try again.")
 	}
 
 	return &config
