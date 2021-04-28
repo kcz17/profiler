@@ -62,7 +62,7 @@ type MatchableMethod struct {
 }
 
 func setDefaults() {
-	viper.SetDefault("profiling.interval", 10)
+	viper.SetDefault("Profiling.Interval", 10)
 }
 
 func ReadConfig() *Config {
