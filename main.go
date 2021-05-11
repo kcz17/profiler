@@ -30,7 +30,7 @@ func main() {
 	)
 	priorityStore := prioritystore.NewRedisStore(
 		*conf.Connections.Redis.Addr,
-		*conf.Connections.Redis.Addr,
+		*conf.Connections.Redis.Password,
 		*conf.Connections.Redis.StoreDB,
 	)
 	profiler := NewInfluxDBProfiler(
